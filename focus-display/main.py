@@ -1,5 +1,6 @@
 # Focus Display - Main Entry Point
 # Inkplate 6PLUS focus timer with Google Calendar integration
+# Unified three-column layout: Clocks | Focus | Timeline
 
 import network
 import ntptime
@@ -45,7 +46,6 @@ def connect_wifi():
         return True
     else:
         print("WiFi connection failed")
-        display.show_error("WiFi connection failed")
         return False
 
 
@@ -60,46 +60,24 @@ def sync_time():
         return False
 
 
-def get_local_time_with_offset(utc_time, offset_hours):
-    """
-    Apply timezone offset to UTC time.
-    Returns (hour, minute) in local time.
-
-    Note: This is a simplified version that doesn't handle DST.
-    For production, you'd want a proper timezone library.
-    """
-    year, month, day, hour, minute, second, weekday, yearday = utc_time
-    hour = (hour + offset_hours) % 24
-    return hour, minute
-
-
 def is_dst_europe(month, day, weekday):
-    """
-    Check if date is in European DST (last Sunday of March to last Sunday of October).
-    Simplified check - not perfectly accurate for edge cases.
-    """
+    """Check if date is in European DST (last Sunday of March to last Sunday of October)."""
     if month < 3 or month > 10:
         return False
     if month > 3 and month < 10:
         return True
-    # March or October - check if past last Sunday
-    # weekday: 0=Monday, 6=Sunday
-    last_sunday = day - ((weekday + 1) % 7)
+    # March or October - rough approximation
     if month == 3:
-        return day >= (31 - 6 + (weekday + 1) % 7)  # Rough approximation
-    return day < (31 - 6 + (weekday + 1) % 7)  # October
+        return day >= (31 - 6 + (weekday + 1) % 7)
+    return day < (31 - 6 + (weekday + 1) % 7)
 
 
 def is_dst_us(month, day, weekday):
-    """
-    Check if date is in US DST (2nd Sunday of March to 1st Sunday of November).
-    Simplified check.
-    """
+    """Check if date is in US DST (2nd Sunday of March to 1st Sunday of November)."""
     if month < 3 or month > 11:
         return False
     if month > 3 and month < 11:
         return True
-    # March: after 2nd Sunday, November: before 1st Sunday
     return month == 3 and day > 14 or month == 11 and day < 8
 
 
@@ -131,31 +109,24 @@ def get_world_times(utc_time):
 
 
 def check_evening_mode(local_hour, minutes_until_next):
-    """
-    Check if we should show evening mode.
-    Evening mode: after 7 PM AND no meetings until tomorrow.
-    """
+    """Check if we should show evening mode (after 7 PM with no meetings today)."""
     is_evening = local_hour >= config.EVENING_MODE_START_HOUR
-
-    # No upcoming meeting, or next meeting is > 12 hours away (tomorrow)
     no_meetings_today = minutes_until_next is None or minutes_until_next > 12 * 60
-
     return is_evening and no_meetings_today
 
 
 def is_weekend(weekday):
     """Check if it's a weekend. weekday: 0=Monday, 6=Sunday."""
-    return weekday >= 5  # Saturday=5, Sunday=6
+    return weekday >= 5
 
 
 def sleep_until_refresh(seconds):
     """Sleep until next refresh. Uses light sleep in dev mode."""
     if config.DEV_MODE:
-        print(f"DEV MODE: light sleep for {seconds} seconds (device stays responsive)...")
+        print(f"DEV MODE: light sleep for {seconds} seconds...")
         time.sleep(seconds)
     else:
         print(f"Entering deep sleep for {seconds} seconds...")
-        # Configure wake button to also wake from deep sleep
         wake_pin = Pin(WAKE_BUTTON_PIN, Pin.IN)
         esp32.wake_on_ext0(pin=wake_pin, level=esp32.WAKEUP_ALL_LOW)
         machine.deepsleep(seconds * 1000)
@@ -168,10 +139,10 @@ def main():
     # Initialize display
     display = FocusDisplay()
 
-    # Connect to WiFi (silently - keep old display visible)
+    # Connect to WiFi
     if not connect_wifi():
         display.show_error("WiFi failed")
-        sleep_until_refresh(60)  # Retry in 1 minute
+        sleep_until_refresh(60)
         return
 
     # Sync time
@@ -197,59 +168,66 @@ def main():
         sleep_until_refresh(60)
         return
 
-    # Get next meeting
-    minutes_until_next, next_title, next_time_str = calendar.get_next_meeting(events, utc_time)
+    # Get next meeting for focus view
+    minutes_until_next, next_title, next_time_str, meeting_type, location = calendar.get_next_meeting(events, utc_time)
 
-    # Get world times (need local hour for refresh interval calculation)
+    # Get today's events for timeline
+    todays_events = calendar.get_todays_events(events, utc_time)
+
+    # Get world times
     times = get_world_times(utc_time)
     local_hour = times["barcelona"][0]
-    weekday = utc_time[6]  # 0=Monday, 6=Sunday
+    weekday = utc_time[6]
 
-    # Determine current refresh interval based on time of day and weekend
+    # Determine refresh interval
     if is_weekend(weekday):
-        current_refresh_interval = config.SCREEN_REFRESH_INTERVAL_NIGHT  # 1 hour on weekends
+        current_refresh_interval = config.SCREEN_REFRESH_INTERVAL_NIGHT
     elif config.WORK_HOURS_START <= local_hour < config.WORK_HOURS_END:
         current_refresh_interval = config.SCREEN_REFRESH_INTERVAL_DAY
     else:
         current_refresh_interval = config.SCREEN_REFRESH_INTERVAL_NIGHT
 
-    # Round down to account for refresh interval - ensures we never show stale "you have time"
-    # when a meeting is actually imminent
+    # Adjust minutes to account for refresh interval
     if minutes_until_next is not None:
         refresh_minutes = current_refresh_interval // 60
         minutes_until_next = max(0, minutes_until_next - refresh_minutes)
 
     # Check evening mode
-    local_hour = times["barcelona"][0]
     is_evening = check_evening_mode(local_hour, minutes_until_next)
 
-    # Render display
+    # Render the unified display
     display.render(
         times=times,
         is_evening_mode=is_evening,
         minutes_until_next=minutes_until_next,
         next_meeting_title=next_title,
         next_meeting_time=next_time_str,
-        force_full=True,  # First render is always full refresh
+        todays_events=todays_events,
+        current_hour=local_hour,
+        force_full=True,
+        meeting_type=meeting_type,
+        location=location,
     )
 
-    print(f"Display updated. Next meeting in {minutes_until_next} minutes." if minutes_until_next else "No upcoming meetings.")
+    print("Display updated.")
+    if minutes_until_next:
+        print(f"Next meeting in {minutes_until_next} minutes.")
+    else:
+        print("No upcoming meetings.")
 
-    # Determine refresh interval based on time of day and weekend
+    # Determine sleep duration
     if is_weekend(weekday):
         refresh_interval = config.SCREEN_REFRESH_INTERVAL_NIGHT
-        print(f"Weekend mode - refreshing in {refresh_interval // 60} minutes (press WAKE for manual refresh)")
+        print(f"Weekend - sleeping {refresh_interval // 60} minutes")
     elif config.WORK_HOURS_START <= local_hour < config.WORK_HOURS_END:
         refresh_interval = config.SCREEN_REFRESH_INTERVAL_DAY
-        print(f"Work hours - refreshing in {refresh_interval // 60} minutes (press WAKE for manual refresh)")
+        print(f"Work hours - sleeping {refresh_interval // 60} minutes")
     else:
         refresh_interval = config.SCREEN_REFRESH_INTERVAL_NIGHT
-        print(f"Night mode - refreshing in {refresh_interval // 60} minutes (press WAKE for manual refresh)")
+        print(f"Night mode - sleeping {refresh_interval // 60} minutes")
 
-    # Sleep until next refresh (wake button also triggers refresh)
     sleep_until_refresh(refresh_interval)
 
 
-# Run main on boot
 if __name__ == "__main__":
     main()

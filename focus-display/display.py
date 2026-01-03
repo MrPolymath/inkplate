@@ -1,7 +1,8 @@
-# Display rendering for Focus Display
+# Display rendering for Focus Display - Unified Three-Column Layout
 from inkplate6FLICK import Inkplate
 from shared.battery import get_battery_percentage
 import config
+import icons
 
 # Import crisp pre-rendered fonts (installed on device at /lib/)
 import FreeSans_24px
@@ -19,360 +20,265 @@ class FocusDisplay:
         self.display.begin()
         self.partial_refresh_count = 0
 
-        # Font references for easy switching
-        self.font_tiny = FreeSans_24px        # 24px for battery indicator
-        self.font_small = FreeSans_32px       # 32px for small labels
-        self.font_medium = FreeSans_48px      # 48px for messages
-        self.font_medium_bold = FreeSansBold_48px  # 48px bold for meeting titles
-        self.font_large = FreeSans_72px       # 72px for clock times
-        self.font_large_bold = FreeSansBold_72px  # 72px bold
-        self.font_xlarge_bold = FreeSansBold_80px  # 80px for focus time
+        # Font references
+        self.font_tiny = FreeSans_24px
+        self.font_small = FreeSans_32px
+        self.font_medium = FreeSansBold_48px
+        self.font_large = FreeSans_72px
+        self.font_large_bold = FreeSansBold_72px
+        self.font_xlarge_bold = FreeSansBold_80px
 
     def format_time_12h(self, hour, minute):
-        """Format time in 12-hour format with AM/PM."""
-        period = "AM" if hour < 12 else "PM"
+        """Format time in 12-hour format without AM/PM (returned separately)."""
         hour_12 = hour % 12
         if hour_12 == 0:
             hour_12 = 12
-        return f"{hour_12}:{minute:02d} {period}"
+        return f"{hour_12}:{minute:02d}"
+
+    def get_period(self, hour):
+        """Return AM or PM."""
+        return "AM" if hour < 12 else "PM"
 
     def format_focus_time(self, minutes):
-        """Format focus time as 'Xh Y min' or 'Y min'."""
-        if minutes < 0:
+        """Format focus time as 'Xh Ym' or 'Ym'."""
+        if minutes is None or minutes < 0:
             minutes = 0
         hours = minutes // 60
         mins = minutes % 60
         if hours > 0:
-            return f"{hours} h {mins} min"
-        return f"{mins} min"
+            return f"{hours}h {mins}m"
+        return f"{mins}m"
+
+    def format_hour_label(self, hour):
+        """Format hour as '8a', '12p', etc."""
+        period = "a" if hour < 12 else "p"
+        h12 = hour % 12 or 12
+        return f"{h12}{period}"
 
     def draw_battery_indicator(self):
         """Draw battery percentage in top right corner."""
+        layout = config.LAYOUT
         pct = get_battery_percentage(self.display)
         self.display.setFont(self.font_tiny)
-        self.display.printText(940, 30, f"{pct}%")
+        self.display.printText(layout["battery_x"], layout["battery_y"], f"{pct}%")
 
-    def draw_clock(self, x, y, city_name, hour, minute):
-        """Draw a single world clock."""
-        # City name (small label)
+    def draw_compact_clock(self, x, y, city_abbrev, hour, minute):
+        """Draw a compact world clock with city, time, and AM/PM stacked."""
+        # City abbreviation (small)
         self.display.setFont(self.font_small)
-        self.display.printText(x, y, city_name)
+        self.display.printText(x, y, city_abbrev)
 
         # Time (large)
-        self.display.setFont(self.font_medium)
+        self.display.setFont(self.font_large)
         time_str = self.format_time_12h(hour, minute)
-        self.display.printText(x, y + 50, time_str)
+        self.display.printText(x, y + 45, time_str)
+
+        # AM/PM (small, below time)
+        self.display.setFont(self.font_tiny)
+        period = self.get_period(hour)
+        self.display.printText(x, y + 115, period)
 
     def draw_world_clocks(self, times):
-        """
-        Draw all three world clocks.
-        times: dict with keys 'barcelona', 'new_york', 'san_francisco'
-               each value is (hour, minute) tuple
-        """
+        """Draw compact world clocks in left column."""
         layout = config.LAYOUT
+        x = layout["clocks_x"]
 
-        # Barcelona
+        # BCN
         h, m = times["barcelona"]
-        self.draw_clock(layout["clocks_x"], layout["clock_1_y"], "BARCELONA", h, m)
+        self.draw_compact_clock(x, layout["clock_1_y"], "BCN", h, m)
 
-        # New York
+        # NY
         h, m = times["new_york"]
-        self.draw_clock(layout["clocks_x"], layout["clock_2_y"], "NEW YORK", h, m)
+        self.draw_compact_clock(x, layout["clock_2_y"], "NY", h, m)
 
-        # San Francisco
+        # SF
         h, m = times["san_francisco"]
-        self.draw_clock(layout["clocks_x"], layout["clock_3_y"], "SAN FRAN", h, m)
+        self.draw_compact_clock(x, layout["clock_3_y"], "SF", h, m)
 
-        # Draw vertical divider line (full height)
-        divider_x = layout["divider_x"]
-        self.display.drawLine(divider_x, layout["divider_top"],
-                              divider_x, layout["divider_bottom"], 1)
-
-    def draw_focus_mode(self, minutes_until_next, next_meeting_title, next_meeting_time):
-        """Draw the focus timer display."""
+    def draw_focus_section(self, is_evening, minutes_until_next, next_title, next_time_str,
+                           meeting_type=None, location=None):
+        """Draw the focus/meeting info in middle column."""
         layout = config.LAYOUT
-        focus_x = layout["focus_x"]
+        x = layout["focus_x"]
 
         is_busy = minutes_until_next is not None and minutes_until_next <= 0
 
         # Main message
         self.display.setFont(self.font_medium)
-        if is_busy:
-            self.display.printText(focus_x, layout["focus_message_y"], "Currently in")
-            self.display.printText(focus_x, layout["focus_message_y"] + 50, "a meeting")
+        if is_evening:
+            self.display.printText(x, layout["focus_message_y"], "Remember")
+            self.display.printText(x, layout["focus_message_y"] + 55, "your")
+            # "priorities" larger
+            self.display.setFont(self.font_large_bold)
+            self.display.printText(x, layout["focus_time_y"], "priorities")
+        elif is_busy:
+            self.display.printText(x, layout["focus_message_y"], "Currently")
+            self.display.printText(x, layout["focus_message_y"] + 55, "in meeting")
+            # Show meeting title
+            self.display.setFont(self.font_medium)
+            if next_title:
+                title = next_title[:20] + "..." if len(next_title) > 20 else next_title
+                self.display.printText(x, layout["focus_time_y"], title)
+            # Show meeting type icon
+            if meeting_type:
+                icon_y = layout["focus_time_y"] + 60
+                icons.draw_icon(self.display, x, icon_y, meeting_type)
+                # Show location text for in-person meetings
+                if meeting_type == "in_person" and location:
+                    self.display.setFont(self.font_tiny)
+                    loc_text = location[:30] + "..." if len(location) > 30 else location
+                    self.display.printText(x + 30, icon_y + 4, loc_text)
         else:
-            self.display.printText(focus_x, layout["focus_message_y"], "You can focus for")
-            self.display.printText(focus_x, layout["focus_message_y"] + 50, "the next")
-
-        # Focus time (extra large and prominent) or meeting title if busy
-        if is_busy:
-            # Show current meeting title in medium bold font
-            self.display.setFont(self.font_medium_bold)
-            if next_meeting_title:
-                # Split into two lines if needed (max ~25 chars per line)
-                if len(next_meeting_title) > 25:
-                    # Find a good break point
-                    break_at = next_meeting_title.rfind(' ', 0, 25)
-                    if break_at == -1:
-                        break_at = 25
-                    line1 = next_meeting_title[:break_at]
-                    line2 = next_meeting_title[break_at:50].strip()
-                    if len(next_meeting_title) > 50:
-                        line2 = line2[:22] + "..."
-                    self.display.printText(focus_x, layout["focus_time_y"], line1)
-                    self.display.printText(focus_x, layout["focus_time_y"] + 55, line2)
-                else:
-                    self.display.printText(focus_x, layout["focus_time_y"], next_meeting_title)
-            else:
-                self.display.printText(focus_x, layout["focus_time_y"], "Busy")
-        else:
+            self.display.printText(x, layout["focus_message_y"], "Focus for")
+            # Focus time (extra large)
             self.display.setFont(self.font_xlarge_bold)
             focus_str = self.format_focus_time(minutes_until_next)
-            self.display.printText(focus_x, layout["focus_time_y"], focus_str)
-
-        # Horizontal separator line (below 80px text)
-        line_y = layout["focus_time_y"] + 100
-        self.display.drawLine(focus_x, line_y, focus_x + 500, line_y, 1)
-
-        # Next meeting info (only show if not busy, or show next after current)
-        self.display.setFont(self.font_small)
-        if next_meeting_title and not is_busy:
-            # Truncate title if too long
-            title = next_meeting_title[:30] + "..." if len(next_meeting_title) > 30 else next_meeting_title
-            self.display.printText(focus_x, layout["focus_next_y"], f"Next: {title}")
-            self.display.printText(focus_x, layout["focus_next_y"] + 35, f"@ {next_meeting_time}")
-
-    def draw_evening_mode(self):
-        """Draw the evening 'remember your priorities' display."""
-        layout = config.LAYOUT
-        focus_x = layout["focus_x"]
-
-        # Main message
-        self.display.setFont(self.font_medium)
-        self.display.printText(focus_x, layout["focus_message_y"], "Remember your")
-
-        # "priorities" larger
-        self.display.setFont(self.font_large_bold)
-        self.display.printText(focus_x, layout["focus_time_y"], "priorities")
+            self.display.printText(x, layout["focus_time_y"], focus_str)
 
         # Separator line
-        line_y = layout["focus_time_y"] + 70
-        self.display.drawLine(focus_x, line_y, focus_x + 450, line_y, 1)
+        line_y = layout["focus_time_y"] + 90
+        self.display.drawLine(x, line_y, x + 380, line_y, 1)
 
-        # Subtext
-        self.display.setFont(self.font_small)
-        self.display.printText(focus_x, layout["focus_next_y"],
-                               "No meetings until tomorrow")
-
-    def draw_page_indicator(self, current_view, total_views=2):
-        """Draw page indicator dots at bottom of screen."""
-        pi = config.PAGE_INDICATOR
-        center_x = config.DISPLAY_WIDTH // 2
-        total_width = (total_views - 1) * pi["dot_spacing"]
-        start_x = center_x - total_width // 2
-
-        for i in range(total_views):
-            x = start_x + i * pi["dot_spacing"]
-            y = pi["y"]
-            r = pi["dot_radius"]
-
-            if i == current_view:
-                # Filled circle for current view
-                self.display.fillCircle(x, y, r, 1)
+        # Next meeting info (only if not evening and has next meeting)
+        if not is_evening and next_title and not is_busy:
+            self.display.setFont(self.font_small)
+            title = next_title[:22] + "..." if len(next_title) > 22 else next_title
+            # Show icon next to "Next:" if meeting type is known
+            if meeting_type:
+                icons.draw_icon(self.display, x, layout["focus_next_y"] - 2, meeting_type)
+                self.display.printText(x + 30, layout["focus_next_y"], f"Next: {title}")
             else:
-                # Empty circle for other views
-                self.display.drawCircle(x, y, r, 1)
+                self.display.printText(x, layout["focus_next_y"], f"Next: {title}")
+            if next_time_str:
+                time_x = x + 30 if meeting_type else x
+                self.display.printText(time_x, layout["focus_next_y"] + 40, f"@ {next_time_str}")
 
-    def draw_touch_zones_debug(self):
-        """Draw touch zones for debugging (only in DEV_MODE)."""
-        if not config.DEV_MODE:
-            return
+    def draw_timeline(self, events, current_hour):
+        """Draw the vertical timeline in right column."""
+        layout = config.LAYOUT
+        start_hour = layout["timeline_start_hour"]
+        end_hour = layout["timeline_end_hour"]
+        row_height = layout["timeline_row_height"]
+        top_y = layout["timeline_top_y"]
+        hour_x = layout["timeline_hour_x"]
+        bar_x = layout["timeline_bar_x"]
+        bar_width = layout["timeline_bar_width"]
 
-        left = config.TOUCH_ZONES["left_edge"]
-        right = config.TOUCH_ZONES["right_edge"]
-
-        # Draw left touch zone border and hatching
-        self.display.drawRect(left[0], left[1], left[2], left[3], 1)
-        for y in range(0, 758, 30):
-            self.display.drawLine(left[0], y, left[0] + left[2], y + 30, 1)
-
-        # Draw right touch zone border and hatching
-        self.display.drawRect(right[0], right[1], right[2], right[3], 1)
-        for y in range(0, 758, 30):
-            self.display.drawLine(right[0], y, right[0] + right[2], y + 30, 1)
-
-        # Add labels
-        self.display.setFont(self.font_tiny)
-        self.display.printText(15, 370, "TAP")
-        self.display.printText(15, 400, "HERE")
-        self.display.printText(935, 370, "TAP")
-        self.display.printText(935, 400, "HERE")
-
-    def format_hour_label(self, hour):
-        """Format hour as '8 AM', '12 PM', etc."""
-        period = "AM" if hour < 12 else "PM"
-        h12 = hour % 12 or 12
-        return f"{h12} {period}"
-
-    def format_duration(self, minutes):
-        """Format duration as '30 min' or '1 h 30 min'."""
-        if minutes >= 60:
-            h = minutes // 60
-            m = minutes % 60
-            if m > 0:
-                return f"{h} h {m} m"
-            return f"{h} h"
-        return f"{minutes} m"
-
-    def draw_agenda(self, events, current_hour, date_str=""):
-        """
-        Draw the agenda view showing 8am-8pm schedule.
-
-        Args:
-            events: List of events with start_hour, start_min, duration_min, summary, is_past
-            current_hour: Current hour (0-23) for NOW marker
-            date_str: Date string like "Friday, Jan 3"
-        """
-        layout = config.AGENDA_LAYOUT
-        start_hour = layout["start_hour"]
-        end_hour = layout["end_hour"]
-        row_height = layout["row_height"]
-        first_row_y = layout["first_row_y"]
-
-        # Title
-        self.display.setFont(self.font_medium)
-        title = f"TODAY - {date_str}" if date_str else "TODAY"
-        self.display.printText(layout["title_x"], layout["title_y"], title)
-
-        # Draw battery indicator
-        self.draw_battery_indicator()
-
-        # Build a map of events by hour
+        # Build events by hour
         events_by_hour = {}
         for evt in events:
             h = evt["start_hour"]
             if start_hour <= h < end_hour:
-                if h not in events_by_hour:
-                    events_by_hour[h] = []
-                events_by_hour[h].append(evt)
+                events_by_hour[h] = evt
 
-        # Draw each hour row
-        self.display.setFont(self.font_small)
+        self.display.setFont(self.font_tiny)
+
         for hour in range(start_hour, end_hour):
             row_idx = hour - start_hour
-            y = first_row_y + row_idx * row_height
+            y = top_y + row_idx * row_height
 
             # Hour label
             hour_label = self.format_hour_label(hour)
-            self.display.printText(layout["hour_x"], y, hour_label)
+            self.display.printText(hour_x, y + 5, hour_label)
 
-            # Check if this is the current hour
-            is_now = (hour == current_hour)
+            # NOW marker - draw arrow and highlight
+            if hour == current_hour and start_hour <= current_hour < end_hour:
+                # Draw arrow pointing to this row
+                arrow_x = hour_x - 25
+                self.display.printText(arrow_x, y + 5, ">")
+                # Draw horizontal line across the row
+                self.display.drawLine(bar_x - 10, y + 15, bar_x + bar_width, y + 15, 1)
 
             if hour in events_by_hour:
-                # Draw meeting(s) for this hour
-                evt = events_by_hour[hour][0]  # Take first event if multiple
+                evt = events_by_hour[hour]
                 duration = evt["duration_min"]
 
-                # Bar width proportional to duration (30 min = ~125px, 60 min = ~250px)
-                bar_width = min(duration * 4, layout["bar_width_max"])
+                # Bar width proportional to duration (max 60 min fills the width)
+                scaled_width = min(duration * bar_width // 60, bar_width)
 
-                # Draw filled rectangle for meeting
-                bar_x = layout["bar_x"]
-                bar_y = y - 5
-                bar_height = row_height - 15
+                bar_y = y
+                bar_height = row_height - 10
 
                 if evt["is_past"]:
-                    # Past meetings: just outline
-                    self.display.drawRect(bar_x, bar_y, bar_width, bar_height, 1)
+                    # Past meetings: outline only
+                    self.display.drawRect(bar_x, bar_y, scaled_width, bar_height, 1)
                 else:
                     # Future meetings: filled
-                    self.display.fillRect(bar_x, bar_y, bar_width, bar_height, 1)
-                    # Draw text in white (inverted)
-                    # Note: Inkplate 1-bit doesn't support text color easily,
-                    # so we'll draw text next to bar instead
-                    self.display.setFont(self.font_tiny)
+                    self.display.fillRect(bar_x, bar_y, scaled_width, bar_height, 1)
 
-                # Meeting title (truncate if needed)
+                # Meeting title (truncated)
                 title = evt["summary"]
-                if len(title) > 25:
-                    title = title[:22] + "..."
+                if len(title) > 15:
+                    title = title[:12] + "..."
 
-                # Position text after bar for filled, or inside outline for past
+                # Position text after bar for filled, inside for outline
                 if evt["is_past"]:
-                    self.display.printText(bar_x + 10, y, title)
+                    self.display.printText(bar_x + 5, y + 5, title)
                 else:
-                    text_x = bar_x + bar_width + 15
-                    self.display.printText(text_x, y, title)
-
-                self.display.setFont(self.font_small)
+                    text_x = bar_x + scaled_width + 8
+                    if text_x + 100 > config.DISPLAY_WIDTH:
+                        text_x = bar_x + 5  # Put inside if no room
+                    self.display.printText(text_x, y + 5, title)
             else:
-                # Empty hour - draw dotted line
-                line_y = y + 10
-                for x in range(layout["bar_x"], layout["bar_x"] + layout["bar_width_max"], 20):
-                    self.display.drawPixel(x, line_y, 1)
-                    self.display.drawPixel(x + 1, line_y, 1)
+                # Empty hour - draw light dotted line
+                line_y = y + row_height // 2
+                for dot_x in range(bar_x, bar_x + bar_width, 15):
+                    self.display.drawPixel(dot_x, line_y, 1)
 
-            # NOW marker
-            if is_now and start_hour <= current_hour < end_hour:
-                now_x = layout["bar_x"] - 30
-                self.display.printText(now_x, y, ">")
+    def draw_dividers(self):
+        """Draw vertical divider lines between columns."""
+        layout = config.LAYOUT
 
-    def render_agenda(self, events, current_hour, date_str="", current_view=1, force_full=False):
-        """Render the agenda view with page indicator."""
-        self.display.clearDisplay()
-
-        self.draw_agenda(events, current_hour, date_str)
-        self.draw_page_indicator(current_view)
-        self.draw_touch_zones_debug()
-
-        # Decide refresh type
-        self.partial_refresh_count += 1
-        full_refresh_needed = (
-            force_full or
-            self.partial_refresh_count >= (config.FULL_REFRESH_INTERVAL // config.SCREEN_REFRESH_INTERVAL_DAY)
+        # Divider between clocks and focus
+        self.display.drawLine(
+            layout["divider1_x"], 50,
+            layout["divider1_x"], config.DISPLAY_HEIGHT - 50, 1
         )
 
-        if full_refresh_needed:
-            self.display.display()
-            self.partial_refresh_count = 0
-        else:
-            self.display.partialUpdate()
+        # Divider between focus and timeline
+        self.display.drawLine(
+            layout["divider2_x"], 50,
+            layout["divider2_x"], config.DISPLAY_HEIGHT - 50, 1
+        )
 
     def render(self, times, is_evening_mode, minutes_until_next=None,
                next_meeting_title=None, next_meeting_time=None,
-               current_view=0, force_full=False):
+               todays_events=None, current_hour=12, force_full=False,
+               meeting_type=None, location=None):
         """
-        Render the focus view (view 0).
+        Render the unified three-column display.
 
         Args:
             times: dict with world clock times
-            is_evening_mode: True if after 7 PM with no meetings
-            minutes_until_next: minutes until next meeting (if not evening mode)
+            is_evening_mode: True if showing evening priorities
+            minutes_until_next: minutes until next meeting
             next_meeting_title: title of next meeting
-            next_meeting_time: formatted time string of next meeting
-            current_view: current view index for page indicator
+            next_meeting_time: formatted time string
+            todays_events: list of today's events for timeline
+            current_hour: current hour (0-23) for NOW marker
             force_full: force a full refresh
+            meeting_type: 'meet', 'zoom', 'teams', 'in_person', or None
+            location: location string for in-person meetings
         """
         self.display.clearDisplay()
 
         # Draw battery indicator (top right)
         self.draw_battery_indicator()
 
-        # Draw world clocks (always shown)
+        # Draw vertical dividers
+        self.draw_dividers()
+
+        # Left column: World clocks
         self.draw_world_clocks(times)
 
-        # Draw main content area
-        if is_evening_mode:
-            self.draw_evening_mode()
-        else:
-            self.draw_focus_mode(minutes_until_next, next_meeting_title, next_meeting_time)
+        # Middle column: Focus info
+        self.draw_focus_section(is_evening_mode, minutes_until_next,
+                                next_meeting_title, next_meeting_time,
+                                meeting_type, location)
 
-        # Draw page indicator
-        self.draw_page_indicator(current_view)
-
-        # Draw touch zone debug indicators (only in DEV_MODE)
-        self.draw_touch_zones_debug()
+        # Right column: Timeline
+        if todays_events is not None:
+            self.draw_timeline(todays_events, current_hour)
 
         # Decide refresh type
         self.partial_refresh_count += 1

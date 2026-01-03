@@ -142,12 +142,18 @@ class CalendarSync:
                         end_mins = end_time[3] * 60 + end_time[4]
                         duration = max(0, end_mins - start_mins)
 
+                        # Get meeting type info
+                        meeting_type = self._get_meeting_type(item)
+                        location = item.get("location", "")
+
                         events.append({
                             "summary": item.get("summary", "No title"),
                             "start_datetime": start_dt,
                             "start_time": start_time,
                             "end_time": end_time,
                             "duration_min": duration,
+                            "meeting_type": meeting_type,
+                            "location": location,
                         })
 
                 response.close()
@@ -164,6 +170,45 @@ class CalendarSync:
         except Exception as e:
             print(f"Calendar fetch error: {e}")
             return None
+
+    def _get_meeting_type(self, item):
+        """
+        Determine meeting type from calendar event.
+
+        Returns: 'meet', 'zoom', 'teams', 'in_person', or None
+        """
+        # Check for Google Meet (hangoutLink or conferenceData)
+        if item.get("hangoutLink"):
+            return "meet"
+
+        # Check conferenceData for other services
+        conf_data = item.get("conferenceData", {})
+        conf_solution = conf_data.get("conferenceSolution", {})
+        conf_name = conf_solution.get("name", "").lower()
+
+        if "meet" in conf_name or "hangout" in conf_name:
+            return "meet"
+        elif "zoom" in conf_name:
+            return "zoom"
+        elif "teams" in conf_name or "microsoft" in conf_name:
+            return "teams"
+
+        # Check entry points for URLs
+        for entry in conf_data.get("entryPoints", []):
+            uri = entry.get("uri", "").lower()
+            if "meet.google" in uri or "hangouts" in uri:
+                return "meet"
+            elif "zoom.us" in uri or "zoom.com" in uri:
+                return "zoom"
+            elif "teams.microsoft" in uri or "teams.live" in uri:
+                return "teams"
+
+        # Check location for physical address (in-person meeting)
+        location = item.get("location", "")
+        if location and not any(x in location.lower() for x in ["http", "zoom", "meet", "teams"]):
+            return "in_person"
+
+        return None
 
     def _parse_datetime(self, dt_string):
         """
@@ -196,12 +241,14 @@ class CalendarSync:
         Find the current or next meeting from a list of events.
 
         Returns:
-            tuple (minutes_until, title, formatted_time) or (None, None, None)
+            tuple (minutes_until, title, formatted_time, meeting_type, location)
+            or (None, None, None, None, None)
             - minutes_until <= 0 means currently in a meeting
             - minutes_until > 0 means time until next meeting
+            - meeting_type: 'meet', 'zoom', 'teams', 'in_person', or None
         """
         if not events:
-            return None, None, None
+            return None, None, None, None, None
 
         year, month, day, hour, minute = current_time[:5]
         current_minutes = hour * 60 + minute
@@ -223,7 +270,7 @@ class CalendarSync:
                     period = "AM" if evt_hour < 12 else "PM"
                     h12 = evt_hour % 12 or 12
                     time_str = f"{h12}:{evt_minute:02d} {period}"
-                    return minutes_until, event["summary"], time_str
+                    return minutes_until, event["summary"], time_str, event.get("meeting_type"), event.get("location", "")
 
                 # Check if this meeting is upcoming
                 if evt_start_minutes > current_minutes:
@@ -231,7 +278,7 @@ class CalendarSync:
                     period = "AM" if evt_hour < 12 else "PM"
                     h12 = evt_hour % 12 or 12
                     time_str = f"{h12}:{evt_minute:02d} {period}"
-                    return minutes_until, event["summary"], time_str
+                    return minutes_until, event["summary"], time_str, event.get("meeting_type"), event.get("location", "")
 
             # Future day event
             elif (evt_year, evt_month, evt_day) > (year, month, day):
@@ -243,9 +290,9 @@ class CalendarSync:
                 tomorrow_minutes = evt_hour * 60 + evt_minute
                 minutes_until = remaining_today + tomorrow_minutes
 
-                return minutes_until, event["summary"], time_str
+                return minutes_until, event["summary"], time_str, event.get("meeting_type"), event.get("location", "")
 
-        return None, None, None
+        return None, None, None, None, None
 
     def get_todays_events(self, events, current_time):
         """
