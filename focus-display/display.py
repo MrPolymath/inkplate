@@ -7,6 +7,7 @@ import config
 import FreeSans_24px
 import FreeSans_32px
 import FreeSans_48px
+import FreeSansBold_48px
 import FreeSans_72px
 import FreeSansBold_72px
 import FreeSansBold_80px
@@ -22,6 +23,7 @@ class FocusDisplay:
         self.font_tiny = FreeSans_24px        # 24px for battery indicator
         self.font_small = FreeSans_32px       # 32px for small labels
         self.font_medium = FreeSans_48px      # 48px for messages
+        self.font_medium_bold = FreeSansBold_48px  # 48px bold for meeting titles
         self.font_large = FreeSans_72px       # 72px for clock times
         self.font_large_bold = FreeSansBold_72px  # 72px bold
         self.font_xlarge_bold = FreeSansBold_80px  # 80px for focus time
@@ -104,8 +106,8 @@ class FocusDisplay:
 
         # Focus time (extra large and prominent) or meeting title if busy
         if is_busy:
-            # Show current meeting title in medium font (fits better)
-            self.display.setFont(self.font_medium)
+            # Show current meeting title in medium bold font
+            self.display.setFont(self.font_medium_bold)
             if next_meeting_title:
                 # Split into two lines if needed (max ~25 chars per line)
                 if len(next_meeting_title) > 25:
@@ -180,6 +182,31 @@ class FocusDisplay:
             else:
                 # Empty circle for other views
                 self.display.drawCircle(x, y, r, 1)
+
+    def draw_touch_zones_debug(self):
+        """Draw touch zones for debugging (only in DEV_MODE)."""
+        if not config.DEV_MODE:
+            return
+
+        left = config.TOUCH_ZONES["left_edge"]
+        right = config.TOUCH_ZONES["right_edge"]
+
+        # Draw left touch zone border and hatching
+        self.display.drawRect(left[0], left[1], left[2], left[3], 1)
+        for y in range(0, 758, 30):
+            self.display.drawLine(left[0], y, left[0] + left[2], y + 30, 1)
+
+        # Draw right touch zone border and hatching
+        self.display.drawRect(right[0], right[1], right[2], right[3], 1)
+        for y in range(0, 758, 30):
+            self.display.drawLine(right[0], y, right[0] + right[2], y + 30, 1)
+
+        # Add labels
+        self.display.setFont(self.font_tiny)
+        self.display.printText(15, 370, "TAP")
+        self.display.printText(15, 400, "HERE")
+        self.display.printText(935, 370, "TAP")
+        self.display.printText(935, 400, "HERE")
 
     def format_hour_label(self, hour):
         """Format hour as '8 AM', '12 PM', etc."""
@@ -297,6 +324,7 @@ class FocusDisplay:
 
         self.draw_agenda(events, current_hour, date_str)
         self.draw_page_indicator(current_view)
+        self.draw_touch_zones_debug()
 
         # Decide refresh type
         self.partial_refresh_count += 1
@@ -342,6 +370,9 @@ class FocusDisplay:
 
         # Draw page indicator
         self.draw_page_indicator(current_view)
+
+        # Draw touch zone debug indicators (only in DEV_MODE)
+        self.draw_touch_zones_debug()
 
         # Decide refresh type
         self.partial_refresh_count += 1
