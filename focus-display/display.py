@@ -102,16 +102,29 @@ class FocusDisplay:
             self.display.printText(focus_x, layout["focus_message_y"], "You can focus for")
             self.display.printText(focus_x, layout["focus_message_y"] + 50, "the next")
 
-        # Focus time (extra large and prominent)
-        self.display.setFont(self.font_xlarge_bold)
+        # Focus time (extra large and prominent) or meeting title if busy
         if is_busy:
-            # Show current meeting title instead of time
+            # Show current meeting title in medium font (fits better)
+            self.display.setFont(self.font_medium)
             if next_meeting_title:
-                title = next_meeting_title[:15] if len(next_meeting_title) > 15 else next_meeting_title
-                self.display.printText(focus_x, layout["focus_time_y"], title)
+                # Split into two lines if needed (max ~25 chars per line)
+                if len(next_meeting_title) > 25:
+                    # Find a good break point
+                    break_at = next_meeting_title.rfind(' ', 0, 25)
+                    if break_at == -1:
+                        break_at = 25
+                    line1 = next_meeting_title[:break_at]
+                    line2 = next_meeting_title[break_at:50].strip()
+                    if len(next_meeting_title) > 50:
+                        line2 = line2[:22] + "..."
+                    self.display.printText(focus_x, layout["focus_time_y"], line1)
+                    self.display.printText(focus_x, layout["focus_time_y"] + 55, line2)
+                else:
+                    self.display.printText(focus_x, layout["focus_time_y"], next_meeting_title)
             else:
                 self.display.printText(focus_x, layout["focus_time_y"], "Busy")
         else:
+            self.display.setFont(self.font_xlarge_bold)
             focus_str = self.format_focus_time(minutes_until_next)
             self.display.printText(focus_x, layout["focus_time_y"], focus_str)
 
