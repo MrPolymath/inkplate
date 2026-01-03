@@ -75,6 +75,22 @@ display.display()
 
 **More fonts available**: https://github.com/SolderedElectronics/Inkplate-micropython/tree/master/Fonts
 
+## Shared Modules
+
+Reusable helpers in `shared/` (also on device at `/lib/shared/`):
+
+### Battery Indicator
+```python
+from shared.battery import draw_battery_indicator
+
+# Draws "XX%" in top right corner
+draw_battery_indicator(display)
+
+# Or get just the percentage
+from shared.battery import get_battery_percentage
+pct = get_battery_percentage(display)  # returns 0-100
+```
+
 ## Git Workflow
 
 **Important**: Multiple agents share this folder, so don't use branches.
