@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Monorepo for Inkplate 6PLUS e-ink display projects. Each project lives in its own folder.
 
+**Current project**: `focus-display/` - See [SPECS.md](focus-display/SPECS.md) for details.
+
 ## Hardware
 
 - **Device**: Inkplate 6PLUS (1024×758 resolution, touchscreen, front light)
