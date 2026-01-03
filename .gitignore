@@ -1,0 +1,10 @@
+# Firmware binaries (download from source instead)
+*.bin
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Secrets (use secrets.py.example as template)
+secrets.py
