@@ -77,14 +77,9 @@ display.display()
 
 ## Git Workflow
 
-**Important**: Multiple people work on this repo. Follow these rules:
+**Important**: Multiple agents share this folder, so don't use branches.
 
-1. **Only commit files you worked on** - don't stage unrelated changes
-2. **Use feature branches** for any non-trivial work:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-3. **Make regular commits** on your branch to track progress
-4. **Create a PR** when the feature is complete
-5. **Small fixes** (typos, minor config changes) can go directly to main
-6. **Keep commit messages short** - no co-author tags, just a clear one-line summary
+1. **Commit directly to main** - no branches (they conflict with parallel agents)
+2. **Only commit files you worked on** - don't stage unrelated changes
+3. **Make small, frequent commits** to track progress
+4. **Keep commit messages short** - one clear line, no co-author tags
