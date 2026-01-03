@@ -64,3 +64,4 @@ display.display()
 3. **Make regular commits** on your branch to track progress
 4. **Create a PR** when the feature is complete
 5. **Small fixes** (typos, minor config changes) can go directly to main
+6. **Keep commit messages short** - no co-author tags, just a clear one-line summary
