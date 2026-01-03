@@ -8,3 +8,6 @@ __pycache__/
 
 # Secrets (use secrets.py.example as template)
 secrets.py
+
+# macOS
+.DS_Store
