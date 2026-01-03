@@ -127,15 +127,27 @@ class CalendarSync:
                     if declined:
                         continue
 
-                    # Get start time
+                    # Get start and end time
                     start = item.get("start", {})
+                    end = item.get("end", {})
                     start_dt = start.get("dateTime") or start.get("date")
+                    end_dt = end.get("dateTime") or end.get("date")
 
                     if start_dt:
+                        start_time = self._parse_datetime(start_dt)
+                        end_time = self._parse_datetime(end_dt) if end_dt else start_time
+
+                        # Calculate duration in minutes
+                        start_mins = start_time[3] * 60 + start_time[4]
+                        end_mins = end_time[3] * 60 + end_time[4]
+                        duration = max(0, end_mins - start_mins)
+
                         events.append({
                             "summary": item.get("summary", "No title"),
                             "start_datetime": start_dt,
-                            "start_time": self._parse_datetime(start_dt),
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "duration_min": duration,
                         })
 
                 response.close()
@@ -181,10 +193,12 @@ class CalendarSync:
 
     def get_next_meeting(self, events, current_time):
         """
-        Find the next meeting from a list of events.
+        Find the current or next meeting from a list of events.
 
         Returns:
             tuple (minutes_until, title, formatted_time) or (None, None, None)
+            - minutes_until <= 0 means currently in a meeting
+            - minutes_until > 0 means time until next meeting
         """
         if not events:
             return None, None, None
@@ -194,13 +208,26 @@ class CalendarSync:
 
         for event in events:
             evt_year, evt_month, evt_day, evt_hour, evt_minute = event["start_time"]
+            end_time = event.get("end_time", event["start_time"])
+            end_hour, end_minute = end_time[3], end_time[4]
 
             # Same day event
             if evt_year == year and evt_month == month and evt_day == day:
-                evt_minutes = evt_hour * 60 + evt_minute
-                if evt_minutes > current_minutes:
-                    minutes_until = evt_minutes - current_minutes
-                    # Format time as 12h
+                evt_start_minutes = evt_hour * 60 + evt_minute
+                evt_end_minutes = end_hour * 60 + end_minute
+
+                # Check if currently IN this meeting
+                if evt_start_minutes <= current_minutes < evt_end_minutes:
+                    # Return negative/zero to indicate "in meeting"
+                    minutes_until = evt_start_minutes - current_minutes  # Will be <= 0
+                    period = "AM" if evt_hour < 12 else "PM"
+                    h12 = evt_hour % 12 or 12
+                    time_str = f"{h12}:{evt_minute:02d} {period}"
+                    return minutes_until, event["summary"], time_str
+
+                # Check if this meeting is upcoming
+                if evt_start_minutes > current_minutes:
+                    minutes_until = evt_start_minutes - current_minutes
                     period = "AM" if evt_hour < 12 else "PM"
                     h12 = evt_hour % 12 or 12
                     time_str = f"{h12}:{evt_minute:02d} {period}"
@@ -208,13 +235,10 @@ class CalendarSync:
 
             # Future day event
             elif (evt_year, evt_month, evt_day) > (year, month, day):
-                # Calculate rough minutes until (for display purposes)
-                # This is simplified - just show it's tomorrow
                 period = "AM" if evt_hour < 12 else "PM"
                 h12 = evt_hour % 12 or 12
                 time_str = f"Tomorrow {h12}:{evt_minute:02d} {period}"
 
-                # Rough estimate: remaining today + hours tomorrow
                 remaining_today = (24 * 60) - current_minutes
                 tomorrow_minutes = evt_hour * 60 + evt_minute
                 minutes_until = remaining_today + tomorrow_minutes
@@ -222,3 +246,36 @@ class CalendarSync:
                 return minutes_until, event["summary"], time_str
 
         return None, None, None
+
+    def get_todays_events(self, events, current_time):
+        """
+        Filter events to only today's events, with is_past flag.
+
+        Returns:
+            List of events for today with:
+            - summary, start_hour, start_min, duration_min, is_past
+        """
+        if not events:
+            return []
+
+        year, month, day, hour, minute = current_time[:5]
+        current_minutes = hour * 60 + minute
+        today_events = []
+
+        for event in events:
+            evt_year, evt_month, evt_day, evt_hour, evt_minute = event["start_time"]
+
+            # Only include today's events
+            if evt_year == year and evt_month == month and evt_day == day:
+                evt_start_mins = evt_hour * 60 + evt_minute
+                is_past = evt_start_mins + event.get("duration_min", 0) < current_minutes
+
+                today_events.append({
+                    "summary": event["summary"],
+                    "start_hour": evt_hour,
+                    "start_min": evt_minute,
+                    "duration_min": event.get("duration_min", 30),
+                    "is_past": is_past,
+                })
+
+        return today_events
