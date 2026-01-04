@@ -170,19 +170,6 @@ class FocusDisplay:
             for dot_x in range(bar_x, bar_x + bar_width, 20):
                 self.display.drawPixel(dot_x, line_y, LIGHT_GREY)
 
-        # Draw NOW marker with precise minute position
-        current_total_minutes = current_hour * 60 + current_minute
-        start_minutes = start_hour * 60
-        end_minutes = end_hour * 60
-        if start_minutes <= current_total_minutes < end_minutes:
-            # Calculate precise Y position based on minutes
-            minutes_from_start = current_total_minutes - start_minutes
-            now_y = top_y + (minutes_from_start * total_height) // total_minutes
-            arrow_x = hour_x - 25
-            self.display.printText(arrow_x, now_y - 8, ">")
-            # Horizontal line at current time
-            self.display.drawLine(bar_x - 5, now_y, bar_x + bar_width, now_y, BLACK)
-
         # Draw events as blocks spanning their full duration
         for evt in events:
             evt_start_hour = evt["start_hour"]
@@ -226,6 +213,22 @@ class FocusDisplay:
                 text_y = evt_y + 5
 
             self.display.printText(bar_x + 5, text_y, title)
+
+        # Draw NOW marker AFTER events so it appears on top
+        current_total_minutes = current_hour * 60 + current_minute
+        start_minutes = start_hour * 60
+        end_minutes = end_hour * 60
+        if start_minutes <= current_total_minutes < end_minutes:
+            # Calculate precise Y position based on minutes
+            minutes_from_start = current_total_minutes - start_minutes
+            now_y = top_y + (minutes_from_start * total_height) // total_minutes
+            arrow_x = hour_x - 25
+            self.display.printText(arrow_x, now_y - 8, ">")
+            # Horizontal line at current time (from arrow to end of timeline)
+            line_start_x = arrow_x + 20  # Start after the arrow
+            line_end_x = bar_x + bar_width
+            # Draw thick line centered on arrow using fillRect
+            self.display.fillRect(line_start_x, now_y + 1, line_end_x - line_start_x, 3, BLACK)
 
     def draw_dividers(self):
         """Draw vertical divider lines between columns."""

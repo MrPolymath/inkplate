@@ -2,9 +2,14 @@
 # Non-sensitive settings - safe to commit
 
 # Development mode - set to True while iterating on the code
-# In dev mode: uses light sleep, device stays responsive to serial
-# In prod mode: uses deep sleep for battery savings
-DEV_MODE = False
+# In dev mode:
+#   - Uses light sleep (device stays responsive to serial)
+#   - Shorter refresh intervals (30s time updates, 1min API)
+#   - Forces "work hours" behavior regardless of actual time
+# In prod mode:
+#   - Uses deep sleep for battery savings
+#   - Normal intervals (1min time updates, 60min API during work hours)
+DEV_MODE = True
 
 # Display settings
 DISPLAY_WIDTH = 1024
@@ -33,14 +38,22 @@ TIMEZONES = {
 # Refresh intervals (in seconds)
 # Dev mode uses shorter intervals for faster iteration
 if DEV_MODE:
-    SCREEN_REFRESH_INTERVAL_DAY = 30       # 30s in dev
-    SCREEN_REFRESH_INTERVAL_NIGHT = 30     # 30s in dev
+    TIME_UPDATE_INTERVAL = 60              # 1 min in dev (same as prod for minute-precision)
+    TIME_UPDATE_INTERVAL_NIGHT = 60        # 1 min in dev (faster than prod for testing)
+    API_REFRESH_INTERVAL = 2 * 60          # 2 min in dev (calendar API)
+    NTP_SYNC_INTERVAL = 2 * 60             # 2 min in dev
+    FULL_REFRESH_INTERVAL = 2 * 60         # 2 min in dev (full screen refresh)
 else:
-    SCREEN_REFRESH_INTERVAL_DAY = 2 * 60   # 2 min during work hours (8am-8pm)
-    SCREEN_REFRESH_INTERVAL_NIGHT = 60 * 60  # 1 hour at night
+    TIME_UPDATE_INTERVAL = 60              # 1 minute during work hours (time-only, no WiFi)
+    TIME_UPDATE_INTERVAL_NIGHT = 60 * 60   # 1 hour at night
+    API_REFRESH_INTERVAL = 60 * 60         # 60 minutes (calendar API refresh)
+    NTP_SYNC_INTERVAL = 60 * 60            # 60 minutes (NTP time sync)
+    FULL_REFRESH_INTERVAL = 30 * 60        # 30 minutes (full screen refresh to clear ghosting)
 
-FULL_REFRESH_INTERVAL = 60 if DEV_MODE else 30 * 60       # 1min dev, 30min prod
-CALENDAR_REFRESH_INTERVAL = 30 if DEV_MODE else 15 * 60   # 30s dev, 15min prod
+# Legacy aliases for compatibility
+SCREEN_REFRESH_INTERVAL_DAY = TIME_UPDATE_INTERVAL
+SCREEN_REFRESH_INTERVAL_NIGHT = TIME_UPDATE_INTERVAL_NIGHT
+CALENDAR_REFRESH_INTERVAL = API_REFRESH_INTERVAL
 
 # Work hours (for variable refresh rate)
 WORK_HOURS_START = 8   # 8 AM

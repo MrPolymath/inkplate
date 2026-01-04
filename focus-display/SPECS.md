@@ -83,11 +83,25 @@ A minimalist e-ink display showing focus time and world clocks for a CEO's desk.
 - Inkplate MicroPython library
 
 ### Refresh Strategy (Battery Optimized)
-- Screen refresh: Every 5 minutes
-- Partial refresh: Default (fast, ~0.3s)
-- Full refresh: Every 30 minutes (clears ghosting)
-- Calendar API call: Every 15 minutes
-- Deep sleep between refreshes to maximize battery life
+
+Uses a **dual update system** to minimize WiFi usage (the biggest power drain):
+
+| Update Type | Frequency | WiFi | What It Does |
+|-------------|-----------|------|--------------|
+| **Time-only** | Every 1 min (work hours) | No | Updates clocks, decrements meeting countdown |
+| **API refresh** | Every 60 min | Yes | Syncs NTP, fetches calendar from Google |
+| **Full display** | Every 30 min | - | Clears e-ink ghosting artifacts |
+
+**Schedule:**
+- **Work hours (8am-8pm weekdays)**: Time updates every 1 minute
+- **Nights/Weekends**: Updates every 1 hour
+
+**How it works:**
+1. Calendar data is cached in ESP32's RTC memory (survives deep sleep)
+2. Most wakes only read RTC time and update display (no WiFi = fast & efficient)
+3. Every hour, or when wake button is pressed, does full API refresh
+
+**Battery impact:** ~10-15x better battery life vs refreshing API every update
 
 ### Timezones
 - Local: Europe/Madrid (displayed as "Barcelona")
@@ -114,7 +128,27 @@ python upload.py
 # → Reboots device
 ```
 
+## Development Mode
+
+Set `DEV_MODE = True` in `config.py` to enable development mode:
+
+| Setting | DEV_MODE=True | DEV_MODE=False |
+|---------|---------------|----------------|
+| Sleep type | Light sleep (serial stays connected) | Deep sleep (battery saving) |
+| Time updates | Every 30 seconds | Every 1 minute |
+| API refresh | Every 1 minute | Every 60 minutes |
+| Work hours | Always forced ON | Based on actual time |
+
+**To test time-only updates:**
+1. Set `DEV_MODE = True` in config.py
+2. Upload to device
+3. First boot does API refresh (needs WiFi)
+4. Subsequent wakes (every 30s) use cached data (no WiFi)
+
+**Remember to set `DEV_MODE = False` for production!**
+
 ## Maintenance
 - **Change WiFi?** Edit secrets.py, run `python upload.py` again
 - **Revoke access?** Go to Google Account → Security → Third-party apps
 - **Update code?** Pull latest, run `python upload.py`
+- **Test changes?** Set `DEV_MODE = True`, upload, observe serial output
