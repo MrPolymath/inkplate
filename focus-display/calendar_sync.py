@@ -75,8 +75,8 @@ class CalendarSync:
 
         year, month, day, hour, minute, second, _, _ = current_time
 
-        # Build time range
-        time_min = self._format_datetime_for_api(year, month, day, hour, minute)
+        # Build time range - start from beginning of today to include past events
+        time_min = self._format_datetime_for_api(year, month, day, 0, 0)
 
         # Simple days ahead calculation (not handling month boundaries perfectly)
         end_day = day + days_ahead
@@ -117,6 +117,16 @@ class CalendarSync:
                     if item.get("status") == "cancelled":
                         continue
 
+                    # Skip working location events (not real meetings)
+                    event_type = item.get("eventType", "")
+                    if event_type in ("workingLocation", "outOfOffice", "focusTime"):
+                        continue
+
+                    # Skip all-day events (no specific time = not a meeting)
+                    start = item.get("start", {})
+                    if "date" in start and "dateTime" not in start:
+                        continue
+
                     # Check attendee status if present
                     attendees = item.get("attendees", [])
                     declined = False
@@ -128,7 +138,6 @@ class CalendarSync:
                         continue
 
                     # Get start and end time
-                    start = item.get("start", {})
                     end = item.get("end", {})
                     start_dt = start.get("dateTime") or start.get("date")
                     end_dt = end.get("dateTime") or end.get("date")

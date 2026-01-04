@@ -53,23 +53,41 @@ EVENING_MODE_START_HOUR = 19  # 7 PM local time
 CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
-# Display layout positions (for 1024x758 screen)
-# Using larger fonts: 32px small, 48px medium, 72-80px large
+# Three-column layout (for 1024x758 screen)
+# Column 1: Clocks (~150px) | Column 2: Focus (~450px) | Column 3: Timeline (~400px)
 LAYOUT = {
-    # Left column - world clocks
-    "clocks_x": 30,
-    "clock_1_y": 80,    # Barcelona
-    "clock_2_y": 300,   # New York
-    "clock_3_y": 520,   # San Francisco
+    # Left column - compact world clocks
+    "clocks_x": 25,
+    "clocks_width": 140,
+    "clock_1_y": 120,    # BCN
+    "clock_2_y": 330,    # NY
+    "clock_3_y": 540,    # SF
 
-    # Vertical divider line - full height
-    "divider_x": 340,
-    "divider_top": 0,
-    "divider_bottom": 758,
+    # First divider (between clocks and focus)
+    "divider1_x": 175,
 
-    # Right area - focus message
-    "focus_x": 380,
-    "focus_message_y": 150,
+    # Middle column - focus info
+    "focus_x": 195,
+    "focus_width": 420,
+    "focus_message_y": 180,
     "focus_time_y": 320,
-    "focus_next_y": 560,
+    "focus_next_y": 520,
+
+    # Second divider (between focus and timeline)
+    "divider2_x": 620,
+
+    # Right column - timeline
+    "timeline_x": 640,
+    "timeline_width": 370,
+    "timeline_hour_x": 650,      # Hour labels
+    "timeline_bar_x": 710,       # Start of meeting bars
+    "timeline_bar_width": 280,   # Width for meeting bars
+    "timeline_start_hour": 8,
+    "timeline_end_hour": 20,
+    "timeline_top_y": 60,
+    "timeline_row_height": 55,   # ~55px per hour for 12 hours
+
+    # Battery indicator
+    "battery_x": 940,
+    "battery_y": 30,
 }

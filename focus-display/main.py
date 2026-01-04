@@ -169,14 +169,15 @@ def main():
         return
 
     # Get next meeting for focus view
-    minutes_until_next, next_title, next_time_str, meeting_type, location = calendar.get_next_meeting(events, utc_time)
+    result = calendar.get_next_meeting(events, utc_time)
+    minutes_until_next, next_title, next_time_str = result[0], result[1], result[2]
 
     # Get today's events for timeline
     todays_events = calendar.get_todays_events(events, utc_time)
 
     # Get world times
     times = get_world_times(utc_time)
-    local_hour = times["barcelona"][0]
+    local_hour, local_minute = times["barcelona"]
     weekday = utc_time[6]
 
     # Determine refresh interval
@@ -204,9 +205,8 @@ def main():
         next_meeting_time=next_time_str,
         todays_events=todays_events,
         current_hour=local_hour,
+        current_minute=local_minute,
         force_full=True,
-        meeting_type=meeting_type,
-        location=location,
     )
 
     print("Display updated.")

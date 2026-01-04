@@ -2,7 +2,6 @@
 from inkplate6FLICK import Inkplate
 from shared.battery import get_battery_percentage
 import config
-import icons
 
 # Import crisp pre-rendered fonts (installed on device at /lib/)
 import FreeSans_24px
@@ -16,7 +15,8 @@ import FreeSansBold_80px
 
 class FocusDisplay:
     def __init__(self):
-        self.display = Inkplate(Inkplate.INKPLATE_1BIT)
+        # Use 2BIT mode for grey shading (0=white, 1=light grey, 2=dark grey, 3=black)
+        self.display = Inkplate(Inkplate.INKPLATE_2BIT)
         self.display.begin()
         self.partial_refresh_count = 0
 
@@ -68,15 +68,15 @@ class FocusDisplay:
         self.display.setFont(self.font_small)
         self.display.printText(x, y, city_abbrev)
 
-        # Time (large)
-        self.display.setFont(self.font_large)
+        # Time (medium bold - compact but readable)
+        self.display.setFont(self.font_medium)
         time_str = self.format_time_12h(hour, minute)
-        self.display.printText(x, y + 45, time_str)
+        self.display.printText(x, y + 40, time_str)
 
         # AM/PM (small, below time)
         self.display.setFont(self.font_tiny)
         period = self.get_period(hour)
-        self.display.printText(x, y + 115, period)
+        self.display.printText(x, y + 95, period)
 
     def draw_world_clocks(self, times):
         """Draw compact world clocks in left column."""
@@ -95,8 +95,7 @@ class FocusDisplay:
         h, m = times["san_francisco"]
         self.draw_compact_clock(x, layout["clock_3_y"], "SF", h, m)
 
-    def draw_focus_section(self, is_evening, minutes_until_next, next_title, next_time_str,
-                           meeting_type=None, location=None):
+    def draw_focus_section(self, is_evening, minutes_until_next, next_title, next_time_str):
         """Draw the focus/meeting info in middle column."""
         layout = config.LAYOUT
         x = layout["focus_x"]
@@ -119,15 +118,6 @@ class FocusDisplay:
             if next_title:
                 title = next_title[:20] + "..." if len(next_title) > 20 else next_title
                 self.display.printText(x, layout["focus_time_y"], title)
-            # Show meeting type icon
-            if meeting_type:
-                icon_y = layout["focus_time_y"] + 60
-                icons.draw_icon(self.display, x, icon_y, meeting_type)
-                # Show location text for in-person meetings
-                if meeting_type == "in_person" and location:
-                    self.display.setFont(self.font_tiny)
-                    loc_text = location[:30] + "..." if len(location) > 30 else location
-                    self.display.printText(x + 30, icon_y + 4, loc_text)
         else:
             self.display.printText(x, layout["focus_message_y"], "Focus for")
             # Focus time (extra large)
@@ -143,18 +133,12 @@ class FocusDisplay:
         if not is_evening and next_title and not is_busy:
             self.display.setFont(self.font_small)
             title = next_title[:22] + "..." if len(next_title) > 22 else next_title
-            # Show icon next to "Next:" if meeting type is known
-            if meeting_type:
-                icons.draw_icon(self.display, x, layout["focus_next_y"] - 2, meeting_type)
-                self.display.printText(x + 30, layout["focus_next_y"], f"Next: {title}")
-            else:
-                self.display.printText(x, layout["focus_next_y"], f"Next: {title}")
+            self.display.printText(x, layout["focus_next_y"], f"Next: {title}")
             if next_time_str:
-                time_x = x + 30 if meeting_type else x
-                self.display.printText(time_x, layout["focus_next_y"] + 40, f"@ {next_time_str}")
+                self.display.printText(x, layout["focus_next_y"] + 40, f"@ {next_time_str}")
 
-    def draw_timeline(self, events, current_hour):
-        """Draw the vertical timeline in right column."""
+    def draw_timeline(self, events, current_hour, current_minute=0):
+        """Draw the vertical timeline in right column with multi-hour event support."""
         layout = config.LAYOUT
         start_hour = layout["timeline_start_hour"]
         end_hour = layout["timeline_end_hour"]
@@ -163,16 +147,16 @@ class FocusDisplay:
         hour_x = layout["timeline_hour_x"]
         bar_x = layout["timeline_bar_x"]
         bar_width = layout["timeline_bar_width"]
+        total_minutes = (end_hour - start_hour) * 60
+        total_height = (end_hour - start_hour) * row_height
 
-        # Build events by hour
-        events_by_hour = {}
-        for evt in events:
-            h = evt["start_hour"]
-            if start_hour <= h < end_hour:
-                events_by_hour[h] = evt
+        # Colors for 2BIT mode: 0=white, 1=light grey, 2=dark grey, 3=black
+        LIGHT_GREY = 1
+        DARK_GREY = 2
+        BLACK = 3
 
+        # Draw hour labels and grid lines first
         self.display.setFont(self.font_tiny)
-
         for hour in range(start_hour, end_hour):
             row_idx = hour - start_hour
             y = top_y + row_idx * row_height
@@ -181,49 +165,67 @@ class FocusDisplay:
             hour_label = self.format_hour_label(hour)
             self.display.printText(hour_x, y + 5, hour_label)
 
-            # NOW marker - draw arrow and highlight
-            if hour == current_hour and start_hour <= current_hour < end_hour:
-                # Draw arrow pointing to this row
-                arrow_x = hour_x - 25
-                self.display.printText(arrow_x, y + 5, ">")
-                # Draw horizontal line across the row
-                self.display.drawLine(bar_x - 10, y + 15, bar_x + bar_width, y + 15, 1)
+            # Light dotted grid line for empty hours
+            line_y = y + row_height // 2
+            for dot_x in range(bar_x, bar_x + bar_width, 20):
+                self.display.drawPixel(dot_x, line_y, LIGHT_GREY)
 
-            if hour in events_by_hour:
-                evt = events_by_hour[hour]
-                duration = evt["duration_min"]
+        # Draw NOW marker with precise minute position
+        current_total_minutes = current_hour * 60 + current_minute
+        start_minutes = start_hour * 60
+        end_minutes = end_hour * 60
+        if start_minutes <= current_total_minutes < end_minutes:
+            # Calculate precise Y position based on minutes
+            minutes_from_start = current_total_minutes - start_minutes
+            now_y = top_y + (minutes_from_start * total_height) // total_minutes
+            arrow_x = hour_x - 25
+            self.display.printText(arrow_x, now_y - 8, ">")
+            # Horizontal line at current time
+            self.display.drawLine(bar_x - 5, now_y, bar_x + bar_width, now_y, BLACK)
 
-                # Bar width proportional to duration (max 60 min fills the width)
-                scaled_width = min(duration * bar_width // 60, bar_width)
+        # Draw events as blocks spanning their full duration
+        for evt in events:
+            evt_start_hour = evt["start_hour"]
+            evt_start_min = evt["start_min"]
+            duration = evt["duration_min"]
 
-                bar_y = y
-                bar_height = row_height - 10
+            # Skip events outside our display range
+            if evt_start_hour >= end_hour or evt_start_hour < start_hour:
+                continue
 
-                if evt["is_past"]:
-                    # Past meetings: outline only
-                    self.display.drawRect(bar_x, bar_y, scaled_width, bar_height, 1)
-                else:
-                    # Future meetings: filled
-                    self.display.fillRect(bar_x, bar_y, scaled_width, bar_height, 1)
+            # Calculate Y position based on start time
+            minutes_from_start = (evt_start_hour - start_hour) * 60 + evt_start_min
+            evt_y = top_y + (minutes_from_start * total_height) // total_minutes
 
-                # Meeting title (truncated)
-                title = evt["summary"]
-                if len(title) > 15:
-                    title = title[:12] + "..."
+            # Calculate height based on duration
+            evt_height = (duration * total_height) // total_minutes
+            evt_height = max(evt_height, 20)  # Minimum height
 
-                # Position text after bar for filled, inside for outline
-                if evt["is_past"]:
-                    self.display.printText(bar_x + 5, y + 5, title)
-                else:
-                    text_x = bar_x + scaled_width + 8
-                    if text_x + 100 > config.DISPLAY_WIDTH:
-                        text_x = bar_x + 5  # Put inside if no room
-                    self.display.printText(text_x, y + 5, title)
-            else:
-                # Empty hour - draw light dotted line
-                line_y = y + row_height // 2
-                for dot_x in range(bar_x, bar_x + bar_width, 15):
-                    self.display.drawPixel(dot_x, line_y, 1)
+            # Clamp to display bounds
+            max_y = top_y + total_height
+            if evt_y + evt_height > max_y:
+                evt_height = max_y - evt_y
+
+            # Choose color based on past/future
+            fill_color = LIGHT_GREY if evt["is_past"] else DARK_GREY
+
+            # Draw filled rectangle for the event
+            self.display.fillRect(bar_x, evt_y, bar_width, evt_height, fill_color)
+            # Draw border
+            self.display.drawRect(bar_x, evt_y, bar_width, evt_height, BLACK)
+
+            # Draw title inside the block
+            title = evt["summary"]
+            # Truncate based on available width (~12 chars fit in bar_width with tiny font)
+            if len(title) > 18:
+                title = title[:15] + "..."
+
+            # Center text vertically in the block
+            text_y = evt_y + (evt_height // 2) - 10
+            if text_y < evt_y + 5:
+                text_y = evt_y + 5
+
+            self.display.printText(bar_x + 5, text_y, title)
 
     def draw_dividers(self):
         """Draw vertical divider lines between columns."""
@@ -243,8 +245,7 @@ class FocusDisplay:
 
     def render(self, times, is_evening_mode, minutes_until_next=None,
                next_meeting_title=None, next_meeting_time=None,
-               todays_events=None, current_hour=12, force_full=False,
-               meeting_type=None, location=None):
+               todays_events=None, current_hour=12, current_minute=0, force_full=False):
         """
         Render the unified three-column display.
 
@@ -256,9 +257,8 @@ class FocusDisplay:
             next_meeting_time: formatted time string
             todays_events: list of today's events for timeline
             current_hour: current hour (0-23) for NOW marker
+            current_minute: current minute (0-59) for precise NOW marker
             force_full: force a full refresh
-            meeting_type: 'meet', 'zoom', 'teams', 'in_person', or None
-            location: location string for in-person meetings
         """
         self.display.clearDisplay()
 
@@ -273,12 +273,11 @@ class FocusDisplay:
 
         # Middle column: Focus info
         self.draw_focus_section(is_evening_mode, minutes_until_next,
-                                next_meeting_title, next_meeting_time,
-                                meeting_type, location)
+                                next_meeting_title, next_meeting_time)
 
         # Right column: Timeline
         if todays_events is not None:
-            self.draw_timeline(todays_events, current_hour)
+            self.draw_timeline(todays_events, current_hour, current_minute)
 
         # Decide refresh type
         self.partial_refresh_count += 1
